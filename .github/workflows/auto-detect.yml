@@ -318,6 +318,16 @@ jobs:
           command_timeout: 15m
           script: |
             set -e
+            # Non-interactive SSH uses a minimal PATH — Node/npm/pm2 are often missing (nvm, fnm, /usr/local, etc.)
+            EXTRA_PATH="${{ secrets.SSH_NODE_PATH }}"
+            export PATH="${EXTRA_PATH:+$EXTRA_PATH:}/usr/local/bin:/snap/bin:/usr/bin:/bin:$HOME/.local/bin:$PATH"
+            export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+            if [ -x "$HOME/.local/share/fnm/fnm" ]; then
+              eval "$("$HOME/.local/share/fnm/fnm" env)"
+            fi
+            [ -f "$HOME/.profile" ] && . "$HOME/.profile" || true
+
             echo "=== Deployment ==="
             cd "${{ secrets.DEPLOY_PATH }}"
             ls -la
@@ -333,6 +343,10 @@ jobs:
             PM2_NAME="${{ secrets.PM2_APP_NAME }}"
             if [ "${{ needs.detect.outputs.node }}" = "true" ] && [ "${{ needs.detect.outputs.node_deploy }}" = "pm2-server" ]; then
               echo "=== PM2 server deploy: install dependencies on host ==="
+              if ! command -v npm >/dev/null 2>&1; then
+                echo "::error::npm not in PATH. On the server run: which npm — then add repo secret SSH_NODE_PATH with that directory (e.g. /home/azureuser/.nvm/versions/node/v20.0.0/bin)."
+                exit 127
+              fi
               npm ci --omit=dev 2>/dev/null || npm install --omit=dev --no-audit --no-fund
               if [ -z "$PM2_NAME" ]; then
                 echo "::error::Set PM2_APP_NAME secret to your pm2 process name (see pm2 ls)"; exit 1
